@@ -51,7 +51,6 @@ library
                     , Runix.Tools.Claude
                     , Runix.Tools.ToolBuilder.Types
                     , Runix.Tools.ToolBuilder.Registry
-                    , Runix.UI.UserInput
 
     build-depends:    base >=4.17 && <5
                     , runix

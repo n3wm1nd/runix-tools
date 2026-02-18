@@ -31,9 +31,6 @@ module Runix.Tools
     -- * Build Tools
   , cabalBuild
 
-    -- * User Interaction
-  , ask
-
     -- * Meta
   , todoWrite
   , todoRead
@@ -52,7 +49,6 @@ module Runix.Tools
   , DiffResult (..)
   , BashResult (..)
   , CabalBuildResult (..)
-  , AskResult (..)
   , TodoWriteResult (..)
   , TodoReadResult (..)
   , TodoCheckResult (..)
@@ -88,9 +84,7 @@ import Runix.Grep (Grep)
 import qualified Runix.Grep
 import Runix.Bash (Bash)
 import qualified Runix.Bash
-import Runix.Cmd (Cmds)
 import qualified Runix.Cmd
-import Runix.UI.UserInput (UserInput, requestInput, ImplementsWidget)
 
 --------------------------------------------------------------------------------
 -- Types
@@ -269,11 +263,6 @@ instance HasCodec CabalBuildResult where
       <*> Autodocodec.requiredField "output" "build stdout" Autodocodec..= buildOutput
       <*> Autodocodec.requiredField "errors" "build stderr" Autodocodec..= buildErrors
 
--- | Result from ask - returns the user's response as text
-newtype AskResult = AskResult Text
-  deriving stock (Show, Eq)
-  deriving (HasCodec) via Text
-
 -- | Result from todo_write - unit type (nothing to return to LLM)
 -- State effect handles the actual todo list mutation
 data TodoWriteResult = TodoWriteResult
@@ -354,10 +343,6 @@ instance ToolParameter TodoDeleteResult where
   paramName _ _ = "result"
   paramDescription _ = "message describing what happened (todo deleted, no match found, or multiple matches)"
 
-instance ToolParameter AskResult where
-  paramName _ _ = "answer"
-  paramDescription _ = "the user's text response"
-
 -- ToolFunction instances for result types
 instance ToolFunction GetCwdResult where
   toolFunctionName _ = "getcwd"
@@ -402,10 +387,6 @@ instance ToolFunction BashResult where
 instance ToolFunction CabalBuildResult where
   toolFunctionName _ = "cabal_build"
   toolFunctionDescription _ = "Run cabal build in a specified directory and return build results"
-
-instance ToolFunction AskResult where
-  toolFunctionName _ = "ask"
-  toolFunctionDescription _ = "Ask the user for small mid-task clarifications (e.g., 'how many retries maximum?', 'what should the timeout be?'). NOT for architectural or strategic decisions - use regular text response for those."
 
 instance ToolFunction TodoWriteResult where
   toolFunctionName _ = "todo_write"
@@ -620,26 +601,6 @@ cabalBuild (WorkingDirectory workDir) = do
       stdout = Runix.Cmd.stdout output
       stderr = Runix.Cmd.stderr output
   return $ CabalBuildResult success stdout stderr
-
---------------------------------------------------------------------------------
--- User Interaction
---------------------------------------------------------------------------------
-
--- | Ask the user for text input during task execution
--- Use for small mid-task clarifications (e.g., "how many retries?", "timeout value?")
--- NOT for architectural or strategic decisions - use regular text response for those
--- Polymorphic over widget system - works with any UI that implements ImplementsWidget
--- The widget system determines how the input is displayed (TUI widget, CLI prompt, etc.)
--- Fails (using Fail effect) if the user cancels by pressing Esc
-ask
-  :: forall widget r. (Member (UserInput widget) r, Member Fail r, ImplementsWidget widget Text)
-  => Text  -- ^ Question/prompt to show the user
-  -> Sem r AskResult
-ask question = do
-  mAnswer <- requestInput @widget question ""
-  case mAnswer of
-    Nothing -> fail "User cancelled input"
-    Just answer -> return $ AskResult answer
 
 --------------------------------------------------------------------------------
 -- Meta Operations
