@@ -1,0 +1,72 @@
+cabal-version:      3.0
+name:               runix-tools
+version:            0.1.0.0
+synopsis:           Core LLM tool infrastructure for Runix agents
+description:
+  Reusable LLM tool definitions, effect types, and registry management
+  for building Runix-based agents. Independently trustable under Safe
+  Haskell (-trust runix-tools).
+
+license:            GPL-3.0-or-later
+license-file:       LICENSE
+author:             Runix Contributors
+maintainer:         runix@example.com
+copyright:          2025 Runix Contributors
+category:           Development
+build-type:         Simple
+
+common warnings
+    ghc-options: -Wall
+                 -Wcompat
+                 -Widentities
+                 -Wincomplete-uni-patterns
+                 -Wincomplete-record-updates
+                 -Wredundant-constraints
+                 -Wnoncanonical-monad-instances
+                 -Wmissing-export-lists
+                 -Wpartial-fields
+
+common extensions
+    default-extensions:
+        AllowAmbiguousTypes
+        DataKinds
+        DerivingStrategies
+        DerivingVia
+        FlexibleContexts
+        FlexibleInstances
+        GADTs
+        LambdaCase
+        MultiParamTypeClasses
+        OverloadedStrings
+        RankNTypes
+        ScopedTypeVariables
+        TypeApplications
+        TypeFamilies
+        TypeOperators
+
+library
+    import:           warnings, extensions
+    exposed-modules:  Runix.Tools
+                    , Runix.Tools.Config
+                    , Runix.Tools.Claude
+                    , Runix.Tools.ToolBuilder.Types
+                    , Runix.Tools.ToolBuilder.Registry
+                    , Runix.UI.UserInput
+
+    build-depends:    base >=4.17 && <5
+                    , runix
+                    , universal-llm
+                    , polysemy >=1.9
+                    , text >=2.0
+                    , autodocodec >=0.2
+                    , aeson
+                    , bytestring
+                    , vector
+                    , directory
+                    , filepath
+                    , process
+                    , containers
+                    , stm
+
+    hs-source-dirs:   src
+    default-language: Haskell2010
