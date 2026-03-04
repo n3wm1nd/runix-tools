@@ -295,9 +295,18 @@ newtype RemoveResult = RemoveResult Bool
   deriving stock (Show, Eq)
   deriving (HasCodec) via Bool
 
-newtype GlobResult = GlobResult [Text]
-  deriving stock (Show, Eq)
-  deriving (HasCodec) via [Text]
+data GlobResult = GlobResult
+  { globResults :: [Text]   -- ^ The file paths being returned
+  , globMatches :: Int      -- ^ Total number of matches found
+  , globShown :: Int        -- ^ Number of matches shown (length of results)
+  } deriving stock (Show, Eq)
+
+instance HasCodec GlobResult where
+  codec = Autodocodec.object "GlobResult" $
+    GlobResult
+      <$> Autodocodec.requiredField "results" "matching file paths" Autodocodec..= globResults
+      <*> Autodocodec.requiredField "matches" "total number of matches found" Autodocodec..= globMatches
+      <*> Autodocodec.requiredField "shown" "number of matches shown in results" Autodocodec..= globShown
 
 newtype GrepResult = GrepResult Text
   deriving stock (Show, Eq)
@@ -493,21 +502,29 @@ maxResponseLines = 2000
 truncateResponse :: Text -> Text
 truncateResponse t =
   let lines_ = T.lines t
+      totalLines = length lines_
+      totalChars = T.length t
       -- Apply line limit first
-      (truncLines, linesTruncated) =
-        if length lines_ > maxResponseLines
-        then (take maxResponseLines lines_, True)
-        else (lines_, False)
+      (truncLines, linesTruncated, linesSkipped) =
+        if totalLines > maxResponseLines
+        then (take maxResponseLines lines_, True, totalLines - maxResponseLines)
+        else (lines_, False, 0)
       joined = T.unlines truncLines
       -- Then apply char limit
-      (result, charsTruncated) =
+      (result, charsTruncated, charsSkipped) =
         if T.length joined > maxResponseChars
-        then (T.take maxResponseChars joined, True)
-        else (joined, False)
+        then (T.take maxResponseChars joined, True, T.length joined - maxResponseChars)
+        else (joined, False, 0)
   in if linesTruncated || charsTruncated
      then result <> "\n\n[Response truncated. "
-          <> (if linesTruncated then "Hit " <> T.pack (show maxResponseLines) <> " line limit. " else "")
-          <> (if charsTruncated then "Hit " <> T.pack (show maxResponseChars) <> " character limit. " else "")
+          <> (if linesTruncated
+              then "Skipped " <> T.pack (show linesSkipped) <> " lines (showing first "
+                   <> T.pack (show maxResponseLines) <> " of " <> T.pack (show totalLines) <> " total). "
+              else "")
+          <> (if charsTruncated
+              then "Skipped " <> T.pack (show charsSkipped) <> " characters (showing first "
+                   <> T.pack (show maxResponseChars) <> " of " <> T.pack (show totalChars) <> " total). "
+              else "")
           <> "Use offset/limit parameters or more specific queries to see more.]"
      else t
 
@@ -639,8 +656,9 @@ remove (FilePath path) (Recursive recursive) = do
   FileSystem.remove @project recursive (T.unpack path)
   return $ RemoveResult True
 
--- | Find files matching a pattern
--- Fails if glob operation cannot be completed
+-- | Find files matching a pattern with fixed result limit
+-- Returns structured result with total matches and shown count
+-- For internal use where you need the complete list, use FileSystem.glob directly
 glob
   :: forall project r. Members [FileSystem project, Fail] r
   => Pattern
@@ -648,7 +666,18 @@ glob
 glob (Pattern pattern) = do
   -- Glob from current directory
   files <- FileSystem.glob @project "." (T.unpack pattern)
-  return $ GlobResult (map T.pack files)
+  let allFiles = map T.pack files
+      totalMatches = length allFiles
+      limitVal = maxResponseLines  -- Fixed reasonable default: 2000
+
+      resultFiles = take limitVal allFiles
+      shownCount = length resultFiles
+
+  return $ GlobResult
+    { globResults = resultFiles
+    , globMatches = totalMatches
+    , globShown = shownCount
+    }
 
 -- | Search file contents with regex, with optional context and glob filtering
 -- Parameterized by filesystem/project to work with chrooted filesystems
