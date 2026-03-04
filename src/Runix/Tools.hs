@@ -24,6 +24,7 @@ module Runix.Tools
   , grep
   , diff
   , diffContentVsFile
+  , sedPrint
 
     -- * Shell
   , bash
@@ -65,12 +66,25 @@ module Runix.Tools
   , Command (..)
   , TodoText (..)
   , WorkingDirectory (..)
+  , Offset (..)
+  , Limit (..)
+  , AfterContext (..)
+  , BeforeContext (..)
+  , FileGlob (..)
+  , SedExpression (..)
+  , SedPrintResult (..)
+
+    -- * Utilities
+  , truncateResponse
+  , maxResponseChars
+  , maxResponseLines
   ) where
 
 import Prelude hiding (readFile, writeFile, FilePath)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import qualified Data.Text.Read as T
 import Data.ByteString (ByteString)
 import Polysemy (Sem, Member, Members)
 import Polysemy.State (State, modify, get, put)
@@ -150,6 +164,30 @@ newtype WorkingDirectory = WorkingDirectory Text
   deriving stock (Show, Eq)
   deriving (HasCodec) via Text
 
+newtype Offset = Offset Int
+  deriving stock (Show, Eq)
+  deriving (HasCodec) via Int
+
+newtype Limit = Limit Int
+  deriving stock (Show, Eq)
+  deriving (HasCodec) via Int
+
+newtype AfterContext = AfterContext Int
+  deriving stock (Show, Eq)
+  deriving (HasCodec) via Int
+
+newtype BeforeContext = BeforeContext Int
+  deriving stock (Show, Eq)
+  deriving (HasCodec) via Int
+
+newtype FileGlob = FileGlob Text
+  deriving stock (Show, Eq)
+  deriving (HasCodec) via Text
+
+newtype SedExpression = SedExpression Text
+  deriving stock (Show, Eq)
+  deriving (HasCodec) via Text
+
 -- ToolParameter instances for parameters
 instance ToolParameter GetCwdResult where
   paramName _ _ = "cwd"
@@ -194,6 +232,30 @@ instance ToolParameter TodoText where
 instance ToolParameter WorkingDirectory where
   paramName _ _ = "working_directory"
   paramDescription _ = "directory to run the command in"
+
+instance ToolParameter Offset where
+  paramName _ _ = "offset"
+  paramDescription _ = "1-based line number to start reading from (default: 1)"
+
+instance ToolParameter Limit where
+  paramName _ _ = "limit"
+  paramDescription _ = "number of lines to return (default: all remaining lines)"
+
+instance ToolParameter AfterContext where
+  paramName _ _ = "after_context"
+  paramDescription _ = "number of lines to show after each match"
+
+instance ToolParameter BeforeContext where
+  paramName _ _ = "before_context"
+  paramDescription _ = "number of lines to show before each match"
+
+instance ToolParameter FileGlob where
+  paramName _ _ = "glob"
+  paramDescription _ = "glob pattern to filter files (e.g., '*.hs', '*.{ts,tsx}')"
+
+instance ToolParameter SedExpression where
+  paramName _ _ = "expression"
+  paramDescription _ = "sed-style line range expression (e.g., '10,20p' or '5p' or '1,5p;20,25p')"
 
 --------------------------------------------------------------------------------
 -- Result Types (unique for ToolFunction instances)
@@ -286,6 +348,10 @@ newtype TodoDeleteResult = TodoDeleteResult Text
   deriving stock (Show, Eq)
   deriving (HasCodec) via Text
 
+newtype SedPrintResult = SedPrintResult Text
+  deriving stock (Show, Eq)
+  deriving (HasCodec) via Text
+
 -- ToolParameter instances for result types (required by ToolFunction)
 instance ToolParameter ReadFileResult where
   paramName _ _ = "read_file_result"
@@ -342,6 +408,10 @@ instance ToolParameter TodoCheckResult where
 instance ToolParameter TodoDeleteResult where
   paramName _ _ = "result"
   paramDescription _ = "message describing what happened (todo deleted, no match found, or multiple matches)"
+
+instance ToolParameter SedPrintResult where
+  paramName _ _ = "sed_print_result"
+  paramDescription _ = "file lines matching the sed expression, with line numbers"
 
 -- ToolFunction instances for result types
 instance ToolFunction GetCwdResult where
@@ -404,6 +474,43 @@ instance ToolFunction TodoDeleteResult where
   toolFunctionName _ = "todo_delete"
   toolFunctionDescription _ = "Delete a todo by text prefix (must match exactly one todo)"
 
+instance ToolFunction SedPrintResult where
+  toolFunctionName _ = "sed_print"
+  toolFunctionDescription _ = "Print specific line ranges from a file using sed-style expressions (e.g., '10,20p' for lines 10-20)"
+
+--------------------------------------------------------------------------------
+-- Utilities
+--------------------------------------------------------------------------------
+
+-- | Truncation limits for LLM responses
+maxResponseChars :: Int
+maxResponseChars = 30000
+
+maxResponseLines :: Int
+maxResponseLines = 2000
+
+-- | Truncate text response to limits, appending indicator if truncated
+truncateResponse :: Text -> Text
+truncateResponse t =
+  let lines_ = T.lines t
+      -- Apply line limit first
+      (truncLines, linesTruncated) =
+        if length lines_ > maxResponseLines
+        then (take maxResponseLines lines_, True)
+        else (lines_, False)
+      joined = T.unlines truncLines
+      -- Then apply char limit
+      (result, charsTruncated) =
+        if T.length joined > maxResponseChars
+        then (T.take maxResponseChars joined, True)
+        else (joined, False)
+  in if linesTruncated || charsTruncated
+     then result <> "\n\n[Response truncated. "
+          <> (if linesTruncated then "Hit " <> T.pack (show maxResponseLines) <> " line limit. " else "")
+          <> (if charsTruncated then "Hit " <> T.pack (show maxResponseChars) <> " character limit. " else "")
+          <> "Use offset/limit parameters or more specific queries to see more.]"
+     else t
+
 --------------------------------------------------------------------------------
 -- File Operations
 --------------------------------------------------------------------------------
@@ -416,13 +523,48 @@ getCwd  = do
   return $ GetCwdResult (FilePath . T.pack $ cwd)
 
 
--- | Read a file from the filesystem
+-- | Read a file from the filesystem with optional offset/limit and line numbering
 readFile
-  :: forall project r. (Members [FileSystemRead project, Fail] r) => FilePath
+  :: forall project r. (Members [FileSystemRead project, Fail] r)
+  => FilePath
+  -> Maybe Offset    -- ^ Optional 1-based line number to start from
+  -> Maybe Limit     -- ^ Optional number of lines to return
   -> Sem r ReadFileResult
-readFile (FilePath path) = do
+readFile (FilePath path) maybeOffset maybeLimit = do
   contents <- FileSystem.readFile @project (T.unpack path)
-  return $ ReadFileResult (T.decodeUtf8 contents)
+  let contentText = T.decodeUtf8 contents
+      allLines = T.lines contentText
+      totalLines = length allLines
+
+      -- Extract offset and limit values (defaults: offset=1, limit=all)
+      offsetVal = case maybeOffset of
+        Just (Offset o) -> max 1 o  -- Ensure offset is at least 1
+        Nothing -> 1
+      limitVal = case maybeLimit of
+        Just (Limit l) -> l
+        Nothing -> totalLines
+
+      -- Calculate 0-indexed start position
+      startIdx = offsetVal - 1
+
+      -- Select the range of lines
+      selectedLines = take limitVal $ drop startIdx allLines
+      endLine = startIdx + length selectedLines
+
+      -- Add line numbers (using cat -n format)
+      numberedLines = zipWith (\lineNum line -> T.pack (show lineNum) <> "\t" <> line)
+                              [offsetVal..endLine]
+                              selectedLines
+
+      -- Add header if we're showing a subset
+      header = if offsetVal > 1 || endLine < totalLines
+               then "[Lines " <> T.pack (show offsetVal) <> "-" <> T.pack (show endLine)
+                    <> " of " <> T.pack (show totalLines) <> " total]\n"
+               else ""
+
+      result = header <> T.unlines numberedLines
+
+  return $ ReadFileResult (truncateResponse result)
 
 -- | Write a new file
 -- Fails if write operation cannot be completed
@@ -508,21 +650,36 @@ glob (Pattern pattern) = do
   files <- FileSystem.glob @project "." (T.unpack pattern)
   return $ GlobResult (map T.pack files)
 
--- | Search file contents with regex
+-- | Search file contents with regex, with optional context and glob filtering
 -- Parameterized by filesystem/project to work with chrooted filesystems
 grep
   :: forall project r. Member (Runix.Grep.Grep project) r
   => Pattern
+  -> Maybe AfterContext
+  -> Maybe BeforeContext
+  -> Maybe FileGlob
   -> Sem r GrepResult
-grep (Pattern pattern) = do
-  -- Grep from current directory
-  matches <- Runix.Grep.grepSearch @project "." (T.unpack pattern)
+grep (Pattern pattern) maybeAfter maybeBefore maybeGlob = do
+  -- Build GrepOptions from Maybe parameters
+  let opts = Runix.Grep.GrepOptions
+        { Runix.Grep.grepAfterContext = case maybeAfter of
+            Just (AfterContext n) -> Just n
+            Nothing -> Nothing
+        , Runix.Grep.grepBeforeContext = case maybeBefore of
+            Just (BeforeContext n) -> Just n
+            Nothing -> Nothing
+        , Runix.Grep.grepGlob = case maybeGlob of
+            Just (FileGlob g) -> Just (T.unpack g)
+            Nothing -> Nothing
+        }
+  -- Grep from current directory with options
+  matches <- Runix.Grep.grepSearch @project "." (T.unpack pattern) opts
   -- Format matches as text
   let formatted = T.intercalate "\n" $
         map (\m -> T.pack (Runix.Grep.matchFile m) <> ":" <>
                    T.pack (show $ Runix.Grep.matchLine m) <> ":" <>
                    Runix.Grep.matchText m) matches
-  return $ GrepResult formatted
+  return $ GrepResult (truncateResponse formatted)
 
 -- | Run unified diff between two files
 -- Fails if either file doesn't exist (uses Fail effect)
@@ -588,7 +745,7 @@ bash (Command cmd) = do
   let result = if Runix.Bash.exitCode output == 0
                then Runix.Bash.stdout output
                else Runix.Bash.stdout output <> "\nSTDERR:\n" <> Runix.Bash.stderr output
-  return $ BashResult result
+  return $ BashResult (truncateResponse result)
 
 -- | Run cabal build in a specified directory
 cabalBuild
@@ -598,8 +755,8 @@ cabalBuild
 cabalBuild (WorkingDirectory workDir) = do
   output <- Runix.Cmd.callIn @"cabal" (T.unpack workDir) ["build", "all"]
   let success = Runix.Cmd.exitCode output == 0
-      stdout = Runix.Cmd.stdout output
-      stderr = Runix.Cmd.stderr output
+      stdout = truncateResponse $ Runix.Cmd.stdout output
+      stderr = truncateResponse $ Runix.Cmd.stderr output
   return $ CabalBuildResult success stdout stderr
 
 --------------------------------------------------------------------------------
@@ -669,3 +826,75 @@ todoDelete (TodoText prefix) = do
     multiple -> do
       let matchTexts = T.intercalate ", " (map todoText multiple)
       return $ TodoDeleteResult $ "Multiple matches found: " <> matchTexts
+
+-- | Print specific line ranges from a file using sed-style expressions
+-- Supports expressions like: "5p" (line 5), "10,20p" (lines 10-20), "1,5p;20,25p" (multiple ranges)
+sedPrint
+  :: forall project r. Members [FileSystemRead project, Fail] r
+  => FilePath
+  -> SedExpression
+  -> Sem r SedPrintResult
+sedPrint (FilePath path) (SedExpression expr) = do
+  -- Parse the sed expression
+  ranges <- case parseSedExpression expr of
+    Left err -> fail $ T.unpack err
+    Right r -> return r
+
+  -- Read the file
+  contents <- FileSystem.readFile @project (T.unpack path)
+  let allLines = T.lines (T.decodeUtf8 contents)
+      totalLines = length allLines
+
+  -- Extract and format the matching lines
+  let selectedLines = extractLineRanges ranges allLines
+      numberedLines = map (\(lineNum, line) -> T.pack (show lineNum) <> "\t" <> line) selectedLines
+
+      result = T.unlines numberedLines
+
+  return $ SedPrintResult (truncateResponse result)
+
+-- | Sed line range specification
+data SedRange
+  = SingleLine Int        -- Np
+  | LineRange Int Int     -- N,Mp
+  | RelativeRange Int Int -- N,+Lp (L lines starting from N)
+  deriving (Show, Eq)
+
+-- | Parse sed-style expression into line ranges
+parseSedExpression :: Text -> Either Text [SedRange]
+parseSedExpression expr =
+  let -- Split by semicolon for multiple expressions
+      parts = T.split (== ';') expr
+      parseResults = map parseSingleExpr parts
+  in sequence parseResults
+  where
+    parseSingleExpr :: Text -> Either Text SedRange
+    parseSingleExpr e =
+      let e' = T.strip e
+          -- Remove trailing 'p' if present
+          withoutP = if T.isSuffixOf "p" e' then T.dropEnd 1 e' else e'
+      in case T.split (== ',') withoutP of
+        [single] ->
+          case T.decimal single of
+            Right (n, rest) | T.null rest -> Right $ SingleLine n
+            _ -> Left $ "Invalid line number: " <> single
+        [start, end] ->
+          -- Check if end starts with '+'
+          if T.isPrefixOf "+" end
+          then case (T.decimal start, T.decimal (T.drop 1 end)) of
+            (Right (s, ""), Right (l, "")) -> Right $ RelativeRange s l
+            _ -> Left $ "Invalid relative range: " <> start <> ",+" <> T.drop 1 end
+          else case (T.decimal start, T.decimal end) of
+            (Right (s, ""), Right (endNum, "")) -> Right $ LineRange s endNum
+            _ -> Left $ "Invalid line range: " <> start <> "," <> end
+        _ -> Left $ "Invalid sed expression: " <> e
+
+-- | Extract lines matching the specified ranges (1-indexed)
+extractLineRanges :: [SedRange] -> [Text] -> [(Int, Text)]
+extractLineRanges ranges allLines =
+  let indexed = zip [1..] allLines
+      matchesAnyRange lineNum = any (lineInRange lineNum) ranges
+      lineInRange n (SingleLine m) = n == m
+      lineInRange n (LineRange start end) = n >= start && n <= end
+      lineInRange n (RelativeRange start len) = n >= start && n < start + len
+  in filter (\(lineNum, _) -> matchesAnyRange lineNum) indexed

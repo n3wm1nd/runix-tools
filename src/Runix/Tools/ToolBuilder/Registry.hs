@@ -39,9 +39,11 @@ import Data.Maybe (mapMaybe)
 import Polysemy (Member, Members, Sem)
 import Polysemy.Fail (Fail)
 import Runix.FileSystem (FileSystemRead, FileSystemWrite)
+import qualified Runix.FileSystem as FileSystem
 import Runix.Tools.Config (RunixToolsFS(..))
 import Runix.Logging (Logging, info)
 import qualified Runix.Tools as Tools
+import qualified Data.Text.Encoding as T
 import qualified Autodocodec
 import qualified UniversalLLM.Tools
 
@@ -69,8 +71,9 @@ readRegistry
   => Sem r [ToolDef]
 readRegistry = do
   let registryPath = "/generated-tools/GeneratedTools.hs"
-  registryContent <- Tools.readFile @RunixToolsFS (Tools.FilePath $ T.pack registryPath)
-  let Tools.ReadFileResult registryText = registryContent
+  -- Use FileSystem.readFile directly for internal use (need complete file)
+  registryBytes <- FileSystem.readFile @RunixToolsFS registryPath
+  let registryText = T.decodeUtf8 registryBytes
   return $ parseToolsList registryText
 
 -- | Modify registry by applying a transformation to the tools list
@@ -85,17 +88,17 @@ modifyRegistry
 modifyRegistry transform = do
   let registryPath = "/generated-tools/GeneratedTools.hs"
 
-  -- Read current registry
-  registryContent <- Tools.readFile @RunixToolsFS (Tools.FilePath $ T.pack registryPath)
-  let Tools.ReadFileResult registryText = registryContent
+  -- Read current registry (use FileSystem.readFile directly for internal use)
+  registryBytes <- FileSystem.readFile @RunixToolsFS registryPath
+  let registryText = T.decodeUtf8 registryBytes
 
   -- Parse, transform, render
   let currentTools = parseToolsList registryText
       updatedTools = transform currentTools
       updatedRegistry = setRegistryFromTools registryText updatedTools
 
-  -- Write back
-  _ <- Tools.writeFile @RunixToolsFS (Tools.FilePath $ T.pack registryPath) (Tools.FileContent updatedRegistry)
+  -- Write back (use FileSystem.writeFile directly)
+  FileSystem.writeFile @RunixToolsFS registryPath (T.encodeUtf8 updatedRegistry)
   info "Registry updated"
 
 --------------------------------------------------------------------------------
