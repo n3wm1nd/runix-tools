@@ -255,7 +255,7 @@ instance ToolParameter FileGlob where
 
 instance ToolParameter SedExpression where
   paramName _ _ = "expression"
-  paramDescription _ = "sed-style line range expression (e.g., '10,20p' or '5p' or '1,5p;20,25p')"
+  paramDescription _ = "sed-style expression: line numbers (5p), ranges (10,20p), relative (5,+10p), patterns (/text/p), combinations (5,/end/p, /start/,/end/p, /start/,+5p). Use // for all lines. Separate multiple with ; (5p;10,20p)"
 
 --------------------------------------------------------------------------------
 -- Result Types (unique for ToolFunction instances)
@@ -485,7 +485,7 @@ instance ToolFunction TodoDeleteResult where
 
 instance ToolFunction SedPrintResult where
   toolFunctionName _ = "sed_print"
-  toolFunctionDescription _ = "Print specific line ranges from a file using sed-style expressions (e.g., '10,20p' for lines 10-20)"
+  toolFunctionDescription _ = "Print specific line ranges from a file using sed-style expressions. Supports: line numbers (5p), ranges (10,20p), relative ranges (5,+10p for 10 lines from line 5), pattern matching (/text/p for lines containing 'text'), and combinations (5,/end/p, /start/,/end/p, /start/,+5p). Empty pattern (//) matches all lines. Multiple expressions can be separated by semicolons (5p;10,20p)."
 
 --------------------------------------------------------------------------------
 -- Utilities
@@ -857,7 +857,19 @@ todoDelete (TodoText prefix) = do
       return $ TodoDeleteResult $ "Multiple matches found: " <> matchTexts
 
 -- | Print specific line ranges from a file using sed-style expressions
--- Supports expressions like: "5p" (line 5), "10,20p" (lines 10-20), "1,5p;20,25p" (multiple ranges)
+-- Supports:
+--   - Line numbers: 5p (line 5)
+--   - Ranges: 10,20p (lines 10-20)
+--   - Relative: 5,+10p (10 lines starting from line 5)
+--   - Pattern matching: /text/p (all lines containing "text")
+--   - Empty pattern: //p (all lines)
+--   - Combinations: 5,/end/p (from line 5 to first line containing "end")
+--                   /start/,/end/p (from each "start" to next "end" - repeating ranges!)
+--                   /start/,+5p (for EACH line matching "start", print it + 5 lines after)
+--   - Multiple: 5p;10,20p (semicolon-separated)
+--
+-- Note: When a range starts with a pattern (/pattern/,...), it creates repeating ranges
+-- (standard sed semantics) - the range is applied for each match of the pattern.
 sedPrint
   :: forall project r. Members [FileSystemRead project, Fail] r
   => FilePath
@@ -872,7 +884,6 @@ sedPrint (FilePath path) (SedExpression expr) = do
   -- Read the file
   contents <- FileSystem.readFile @project (T.unpack path)
   let allLines = T.lines (T.decodeUtf8 contents)
-      totalLines = length allLines
 
   -- Extract and format the matching lines
   let selectedLines = extractLineRanges ranges allLines
@@ -882,11 +893,17 @@ sedPrint (FilePath path) (SedExpression expr) = do
 
   return $ SedPrintResult (truncateResponse result)
 
+-- | Sed location specification
+data Location
+  = Line Int           -- 5
+  | Match Text         -- /pattern/
+  | Relative Int       -- +10 (only valid as second part of range)
+  deriving (Show, Eq)
+
 -- | Sed line range specification
 data SedRange
-  = SingleLine Int        -- Np
-  | LineRange Int Int     -- N,Mp
-  | RelativeRange Int Int -- N,+Lp (L lines starting from N)
+  = SingleLocation Location      -- 5p or /pattern/p
+  | Range Location Location      -- 5,10p or 5,/test/p or /start/,/end/p or /pattern/,+5p
   deriving (Show, Eq)
 
 -- | Parse sed-style expression into line ranges
@@ -903,27 +920,83 @@ parseSedExpression expr =
           -- Remove trailing 'p' if present
           withoutP = if T.isSuffixOf "p" e' then T.dropEnd 1 e' else e'
       in case T.split (== ',') withoutP of
-        [single] ->
-          case T.decimal single of
-            Right (n, rest) | T.null rest -> Right $ SingleLine n
-            _ -> Left $ "Invalid line number: " <> single
-        [start, end] ->
-          -- Check if end starts with '+'
-          if T.isPrefixOf "+" end
-          then case (T.decimal start, T.decimal (T.drop 1 end)) of
-            (Right (s, ""), Right (l, "")) -> Right $ RelativeRange s l
-            _ -> Left $ "Invalid relative range: " <> start <> ",+" <> T.drop 1 end
-          else case (T.decimal start, T.decimal end) of
-            (Right (s, ""), Right (endNum, "")) -> Right $ LineRange s endNum
-            _ -> Left $ "Invalid line range: " <> start <> "," <> end
-        _ -> Left $ "Invalid sed expression: " <> e
+        [single] -> do
+          loc <- parseLocation single
+          return $ SingleLocation loc
+        [start, end] -> do
+          startLoc <- parseLocation start
+          endLoc <- parseLocation end
+          -- Validate: relative offset not allowed as start
+          case startLoc of
+            Relative _ -> Left "Relative offset (+N) not allowed as start of range"
+            _ -> case endLoc of
+              Relative n | n < 0 -> Left "Negative offsets not allowed"
+              _ -> Right $ Range startLoc endLoc
+        _ -> Left $ "Invalid sed expression: " <> e'
+
+    parseLocation :: Text -> Either Text Location
+    parseLocation loc =
+      let loc' = T.strip loc
+      in if T.isPrefixOf "/" loc' && T.isSuffixOf "/" loc'
+         then -- /pattern/ (empty pattern matches all lines)
+              Right $ Match (T.drop 1 $ T.dropEnd 1 loc')
+         else if T.isPrefixOf "+" loc'
+         then -- +N
+              case T.decimal (T.drop 1 loc') of
+                Right (n, rest) | T.null rest -> Right $ Relative n
+                _ -> Left $ "Invalid relative offset: " <> loc'
+         else -- N
+              case T.decimal loc' of
+                Right (n, rest) | T.null rest -> Right $ Line n
+                _ -> Left $ "Invalid location: " <> loc'
 
 -- | Extract lines matching the specified ranges (1-indexed)
 extractLineRanges :: [SedRange] -> [Text] -> [(Int, Text)]
 extractLineRanges ranges allLines =
   let indexed = zip [1..] allLines
-      matchesAnyRange lineNum = any (lineInRange lineNum) ranges
-      lineInRange n (SingleLine m) = n == m
-      lineInRange n (LineRange start end) = n >= start && n <= end
-      lineInRange n (RelativeRange start len) = n >= start && n < start + len
-  in filter (\(lineNum, _) -> matchesAnyRange lineNum) indexed
+      -- Collect all matching line numbers for each range
+      allMatches = concatMap (matchRange indexed) ranges
+  in filter (\(lineNum, _) -> lineNum `elem` allMatches) indexed
+  where
+    matchRange :: [(Int, Text)] -> SedRange -> [Int]
+    matchRange indexed range = case range of
+      SingleLocation loc -> matchSingleLocation indexed loc
+      Range startLoc endLoc ->
+        -- If startLoc is a pattern match, we need repeating ranges (sed semantics)
+        case startLoc of
+          Match _ ->
+            let startLines = matchSingleLocation indexed startLoc
+            in concatMap (\start -> resolveRange indexed start endLoc) startLines
+          _ ->
+            -- For Line or Relative, just a single range
+            let startLine = resolveStartLocation indexed startLoc
+            in case startLine of
+              Nothing -> []
+              Just start -> resolveRange indexed start endLoc
+
+    -- Resolve a single location to all matching line numbers
+    matchSingleLocation :: [(Int, Text)] -> Location -> [Int]
+    matchSingleLocation indexed loc = case loc of
+      Line n -> [n]
+      Match pattern -> [lineNum | (lineNum, lineText) <- indexed, pattern `T.isInfixOf` lineText]
+      Relative _ -> []  -- Relative on its own doesn't make sense, ignore
+
+    -- Resolve start location to first matching line number
+    resolveStartLocation :: [(Int, Text)] -> Location -> Maybe Int
+    resolveStartLocation indexed loc = case loc of
+      Line n -> Just n
+      Match pattern -> case [(lineNum, lineText) | (lineNum, lineText) <- indexed, pattern `T.isInfixOf` lineText] of
+        [] -> Nothing
+        (firstMatch, _):_ -> Just firstMatch
+      Relative n -> Just n  -- Treat as absolute (though parser should reject this)
+
+    -- Resolve a range from start line to end location
+    resolveRange :: [(Int, Text)] -> Int -> Location -> [Int]
+    resolveRange indexed startLine endLoc = case endLoc of
+      Line endLine -> [startLine .. endLine]
+      Relative offset -> [startLine .. (startLine + offset)]
+      Match pattern ->
+        -- Find first match of pattern at or after startLine
+        case [(lineNum, lineText) | (lineNum, lineText) <- indexed, lineNum >= startLine, pattern `T.isInfixOf` lineText] of
+          [] -> []  -- Pattern not found after start
+          (endLine, _):_ -> [startLine .. endLine]
