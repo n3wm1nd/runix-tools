@@ -2,6 +2,8 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE KindSignatures #-}
 -- | Tools for Runix Code agent
 --
 -- Each tool is just a function in Sem r that the LLM can call.
@@ -28,6 +30,7 @@ module Runix.Tools
 
     -- * Shell
   , bash
+  , cmd
 
     -- * Build Tools
   , cabalBuild
@@ -49,6 +52,7 @@ module Runix.Tools
   , GrepResult (..)
   , DiffResult (..)
   , BashResult (..)
+  , CmdResult (..)
   , CabalBuildResult (..)
   , TodoWriteResult (..)
   , TodoReadResult (..)
@@ -73,6 +77,11 @@ module Runix.Tools
   , FileGlob (..)
   , SedExpression (..)
   , SedPrintResult (..)
+  , CmdArgs (..)
+  , GrepPatterns (..)
+  , HeadLines (..)
+  , TailLines (..)
+  , FilterStderr (..)
 
     -- * Utilities
   , truncateResponse
@@ -86,6 +95,8 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.Read as T
 import Data.ByteString (ByteString)
+import Data.Proxy (Proxy(..))
+import GHC.TypeLits (Symbol, KnownSymbol, symbolVal)
 import Polysemy (Sem, Member, Members)
 import Polysemy.State (State, modify, get, put)
 import Polysemy.Fail (Fail)
@@ -188,6 +199,26 @@ newtype SedExpression = SedExpression Text
   deriving stock (Show, Eq)
   deriving (HasCodec) via Text
 
+newtype CmdArgs = CmdArgs [Text]
+  deriving stock (Show, Eq)
+  deriving (HasCodec) via [Text]
+
+newtype GrepPatterns = GrepPatterns [Text]
+  deriving stock (Show, Eq)
+  deriving (HasCodec) via [Text]
+
+newtype HeadLines = HeadLines Int
+  deriving stock (Show, Eq)
+  deriving (HasCodec) via Int
+
+newtype TailLines = TailLines Int
+  deriving stock (Show, Eq)
+  deriving (HasCodec) via Int
+
+newtype FilterStderr = FilterStderr Bool
+  deriving stock (Show, Eq)
+  deriving (HasCodec) via Bool
+
 -- ToolParameter instances for parameters
 instance ToolParameter GetCwdResult where
   paramName _ _ = "cwd"
@@ -257,6 +288,26 @@ instance ToolParameter SedExpression where
   paramName _ _ = "expression"
   paramDescription _ = "sed-style expression: line numbers (5p), ranges (10,20p), relative (5,+10p), patterns (/text/p), combinations (5,/end/p, /start/,/end/p, /start/,+5p). Use // for all lines. Separate multiple with ; (5p;10,20p)"
 
+instance ToolParameter CmdArgs where
+  paramName _ _ = "args"
+  paramDescription _ = "command line arguments"
+
+instance ToolParameter GrepPatterns where
+  paramName _ _ = "grep"
+  paramDescription _ = "filter output to lines containing any of these patterns (empty list = no filtering)"
+
+instance ToolParameter HeadLines where
+  paramName _ _ = "head"
+  paramDescription _ = "take only the first N lines of output"
+
+instance ToolParameter TailLines where
+  paramName _ _ = "tail"
+  paramDescription _ = "take only the last N lines of output"
+
+instance ToolParameter FilterStderr where
+  paramName _ _ = "filter_stderr"
+  paramDescription _ = "apply filters to stderr as well as stdout (default: false, stderr passes through unfiltered like Unix pipes)"
+
 --------------------------------------------------------------------------------
 -- Result Types (unique for ToolFunction instances)
 --------------------------------------------------------------------------------
@@ -319,6 +370,20 @@ newtype DiffResult = DiffResult Text
 newtype BashResult = BashResult Text
   deriving stock (Show, Eq)
   deriving (HasCodec) via Text
+
+-- | Result from cmd execution - parametrized by command name for unique ToolFunction instances
+data CmdResult (command :: Symbol) = CmdResult
+  { cmdExitCode :: Int
+  , cmdStdout :: Text
+  , cmdStderr :: Text
+  } deriving stock (Show, Eq)
+
+instance HasCodec (CmdResult command) where
+  codec = Autodocodec.object "CmdResult" $
+    CmdResult
+      <$> Autodocodec.requiredField "exit_code" "command exit code" Autodocodec..= cmdExitCode
+      <*> Autodocodec.requiredField "stdout" "filtered stdout" Autodocodec..= cmdStdout
+      <*> Autodocodec.requiredField "stderr" "stderr (filtered if filter_stderr=true, otherwise unfiltered)" Autodocodec..= cmdStderr
 
 -- | Result from cabal build - returns success status and output
 data CabalBuildResult = CabalBuildResult
@@ -398,6 +463,10 @@ instance ToolParameter BashResult where
   paramName _ _ = "bash_result"
   paramDescription _ = "command output"
 
+instance ToolParameter (CmdResult command) where
+  paramName _ _ = "cmd_result"
+  paramDescription _ = "command execution result with exit code and filtered output"
+
 instance ToolParameter CabalBuildResult where
   paramName _ _ = "cabal_build_result"
   paramDescription _ = "cabal build result with success status and output"
@@ -462,6 +531,10 @@ instance ToolFunction DiffResult where
 instance ToolFunction BashResult where
   toolFunctionName _ = "bash"
   toolFunctionDescription _ = "Execute a bash command and return output"
+
+instance KnownSymbol command => ToolFunction (CmdResult command) where
+  toolFunctionName _ = "call_" <> T.pack (symbolVal (Proxy @command))
+  toolFunctionDescription _ = "Execute " <> T.pack (symbolVal (Proxy @command)) <> " command with optional output filtering. Filters (grep patterns, head/tail) are applied to stdout (and stderr if filter_stderr=true). Grep uses OR logic (match any pattern). Filters apply in order: grep → head → tail."
 
 instance ToolFunction CabalBuildResult where
   toolFunctionName _ = "cabal_build"
@@ -768,13 +841,65 @@ bash
   :: Member Bash r
   => Command
   -> Sem r BashResult
-bash (Command cmd) = do
-  output <- Runix.Bash.bashExec (T.unpack cmd)
+bash (Command bashCmd) = do
+  output <- Runix.Bash.bashExec (T.unpack bashCmd)
   -- Format output with stdout and stderr
   let result = if Runix.Bash.exitCode output == 0
                then Runix.Bash.stdout output
                else Runix.Bash.stdout output <> "\nSTDERR:\n" <> Runix.Bash.stderr output
   return $ BashResult (truncateResponse result)
+
+-- | Execute an arbitrary command with optional output filtering
+-- The command name is specified at the type level (e.g., @"sendmail"@)
+-- This allows type-safe command execution with the Cmd effect
+--
+-- Filtering is applied to stdout (and stderr if filter_stderr=True) in this order:
+-- 1. Filter by grep patterns (OR logic - keep lines matching any pattern)
+-- 2. Apply head (take first N lines)
+-- 3. Apply tail (take last N lines)
+--
+-- If filter_stderr is False (default), stderr passes through unfiltered (Unix pipe behavior)
+--
+-- Example: @cmd \@\"git\" (CmdArgs [\"status\"]) Nothing (GrepPatterns [\"modified\"]) (Just $ HeadLines 10) Nothing (FilterStderr False)@
+cmd
+  :: forall command r. Member (Runix.Cmd.Cmd command) r
+  => CmdArgs                    -- ^ Command arguments
+  -> Maybe WorkingDirectory     -- ^ Working directory (default: current)
+  -> GrepPatterns               -- ^ Grep patterns to filter output (empty = no filtering)
+  -> Maybe HeadLines            -- ^ Take first N lines
+  -> Maybe TailLines            -- ^ Take last N lines
+  -> FilterStderr               -- ^ Apply filters to stderr too (default: false)
+  -> Sem r (CmdResult command)
+cmd (CmdArgs args) maybeWorkDir (GrepPatterns patterns) maybeHead maybeTail (FilterStderr filterStderr) = do
+  -- Execute the command
+  let workDir = case maybeWorkDir of
+        Just (WorkingDirectory wd) -> T.unpack wd
+        Nothing -> "."
+  output <- Runix.Cmd.callIn @command workDir (map T.unpack args)
+
+  -- Build filter pipeline: grep → head → tail
+  let applyGrep text = if null patterns
+                       then text
+                       else T.unlines . filter (\line -> any (`T.isInfixOf` line) patterns) . T.lines $ text
+      applyHead text = case maybeHead of
+        Just (HeadLines n) -> T.unlines . take n . T.lines $ text
+        Nothing -> text
+      applyTail text = case maybeTail of
+        Just (TailLines n) -> let ls = T.lines text in T.unlines . drop (length ls - n) $ ls
+        Nothing -> text
+
+      filterPipeline = applyTail . applyHead . applyGrep
+
+      filteredStdout = filterPipeline (Runix.Cmd.stdout output)
+      filteredStderr = if filterStderr
+                       then filterPipeline (Runix.Cmd.stderr output)
+                       else Runix.Cmd.stderr output
+
+  return $ CmdResult
+    { cmdExitCode = Runix.Cmd.exitCode output
+    , cmdStdout = truncateResponse filteredStdout
+    , cmdStderr = truncateResponse filteredStderr
+    }
 
 -- | Run cabal build in a specified directory
 cabalBuild
