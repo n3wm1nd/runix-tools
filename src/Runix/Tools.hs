@@ -128,8 +128,8 @@ instance HasCodec Todo where
       <*> Autodocodec.requiredField "completed" "completion status" Autodocodec..= todoCompleted
 
 instance ToolParameter Todo where
-  paramName _ _ = "todo"
-  paramDescription _ = "a todo item"
+  paramName = "todo"
+  paramDescription = "a todo item"
 
 --------------------------------------------------------------------------------
 -- Parameter Newtypes
@@ -221,92 +221,92 @@ newtype FilterStderr = FilterStderr Bool
 
 -- ToolParameter instances for parameters
 instance ToolParameter GetCwdResult where
-  paramName _ _ = "cwd"
-  paramDescription _ = "the current working directory"
+  paramName = "cwd"
+  paramDescription = "the current working directory"
 
 instance ToolParameter FilePath where
-  paramName _ _ = "file_path"
-  paramDescription _ = "absolute path to the file"
+  paramName = "file_path"
+  paramDescription = "absolute path to the file"
 
 instance ToolParameter FileContent where
-  paramName _ _ = "content"
-  paramDescription _ = "content to write to the file"
+  paramName = "content"
+  paramDescription = "content to write to the file"
 
 instance ToolParameter OldString where
-  paramName _ _ = "old_string"
-  paramDescription _ = "exact string to find and replace"
+  paramName = "old_string"
+  paramDescription = "exact string to find and replace"
 
 instance ToolParameter NewString where
-  paramName _ _ = "new_string"
-  paramDescription _ = "string to replace with"
+  paramName = "new_string"
+  paramDescription = "string to replace with"
 
 instance ToolParameter CreateParents where
-  paramName _ _ = "create_parents"
-  paramDescription _ = "whether to create parent directories if they don't exist"
+  paramName = "create_parents"
+  paramDescription = "whether to create parent directories if they don't exist"
 
 instance ToolParameter Recursive where
-  paramName _ _ = "recursive"
-  paramDescription _ = "whether to remove directories recursively"
+  paramName = "recursive"
+  paramDescription = "whether to remove directories recursively"
 
 instance ToolParameter Pattern where
-  paramName _ _ = "pattern"
-  paramDescription _ = "glob or regex pattern to match"
+  paramName = "pattern"
+  paramDescription = "glob or regex pattern to match"
 
 instance ToolParameter Command where
-  paramName _ _ = "command"
-  paramDescription _ = "shell command to execute"
+  paramName = "command"
+  paramDescription = "shell command to execute"
 
 instance ToolParameter TodoText where
-  paramName _ _ = "text"
-  paramDescription _ = "text or prefix of the todo item"
+  paramName = "text"
+  paramDescription = "text or prefix of the todo item"
 
 instance ToolParameter WorkingDirectory where
-  paramName _ _ = "working_directory"
-  paramDescription _ = "directory to run the command in"
+  paramName = "working_directory"
+  paramDescription = "directory to run the command in"
 
 instance ToolParameter Offset where
-  paramName _ _ = "offset"
-  paramDescription _ = "1-based line number to start reading from (default: 1)"
+  paramName = "offset"
+  paramDescription = "1-based line number to start reading from (default: 1)"
 
 instance ToolParameter Limit where
-  paramName _ _ = "limit"
-  paramDescription _ = "number of lines to return (default: all remaining lines)"
+  paramName = "limit"
+  paramDescription = "number of lines to return (default: all remaining lines)"
 
 instance ToolParameter AfterContext where
-  paramName _ _ = "after_context"
-  paramDescription _ = "number of lines to show after each match"
+  paramName = "after_context"
+  paramDescription = "number of lines to show after each match"
 
 instance ToolParameter BeforeContext where
-  paramName _ _ = "before_context"
-  paramDescription _ = "number of lines to show before each match"
+  paramName = "before_context"
+  paramDescription = "number of lines to show before each match"
 
 instance ToolParameter FileGlob where
-  paramName _ _ = "glob"
-  paramDescription _ = "glob pattern to filter files (e.g., '*.hs', '*.{ts,tsx}')"
+  paramName = "glob"
+  paramDescription = "glob pattern to filter files (e.g., '*.hs', '*.{ts,tsx}')"
 
 instance ToolParameter SedExpression where
-  paramName _ _ = "expression"
-  paramDescription _ = "sed-style expression: line numbers (5p), ranges (10,20p), relative (5,+10p), patterns (/text/p), combinations (5,/end/p, /start/,/end/p, /start/,+5p). Use // for all lines. Separate multiple with ; (5p;10,20p)"
+  paramName = "expression"
+  paramDescription = "sed-style expression: line numbers (5p), ranges (10,20p), relative (5,+10p), patterns (/text/p), combinations (5,/end/p, /start/,/end/p, /start/,+5p). Use // for all lines. Separate multiple with ; (5p;10,20p)"
 
 instance ToolParameter CmdArgs where
-  paramName _ _ = "args"
-  paramDescription _ = "command line arguments"
+  paramName = "args"
+  paramDescription = "command line arguments"
 
 instance ToolParameter GrepPatterns where
-  paramName _ _ = "grep"
-  paramDescription _ = "filter output to lines containing any of these patterns (empty list = no filtering)"
+  paramName = "grep"
+  paramDescription = "filter output to lines containing any of these patterns (empty list = no filtering)"
 
 instance ToolParameter HeadLines where
-  paramName _ _ = "head"
-  paramDescription _ = "take only the first N lines of output"
+  paramName = "head"
+  paramDescription = "take only the first N lines of output"
 
 instance ToolParameter TailLines where
-  paramName _ _ = "tail"
-  paramDescription _ = "take only the last N lines of output"
+  paramName = "tail"
+  paramDescription = "take only the last N lines of output"
 
 instance ToolParameter FilterStderr where
-  paramName _ _ = "filter_stderr"
-  paramDescription _ = "apply filters to stderr as well as stdout (default: false, stderr passes through unfiltered like Unix pipes)"
+  paramName = "filter_stderr"
+  paramDescription = "apply filters to stderr as well as stdout (default: false, stderr passes through unfiltered like Unix pipes)"
 
 --------------------------------------------------------------------------------
 -- Result Types (unique for ToolFunction instances)
@@ -428,137 +428,137 @@ newtype SedPrintResult = SedPrintResult Text
 
 -- ToolParameter instances for result types (required by ToolFunction)
 instance ToolParameter ReadFileResult where
-  paramName _ _ = "read_file_result"
-  paramDescription _ = "file contents"
+  paramName = "read_file_result"
+  paramDescription = "file contents"
 
 instance ToolParameter WriteFileResult where
-  paramName _ _ = "write_file_result"
-  paramDescription _ = "write success status"
+  paramName = "write_file_result"
+  paramDescription = "write success status"
 
 instance ToolParameter EditFileResult where
-  paramName _ _ = "edit_file_result"
-  paramDescription _ = "edit result with success status and message"
+  paramName = "edit_file_result"
+  paramDescription = "edit result with success status and message"
 
 instance ToolParameter MkdirResult where
-  paramName _ _ = "mkdir_result"
-  paramDescription _ = "mkdir success status"
+  paramName = "mkdir_result"
+  paramDescription = "mkdir success status"
 
 instance ToolParameter RemoveResult where
-  paramName _ _ = "remove_result"
-  paramDescription _ = "remove success status"
+  paramName = "remove_result"
+  paramDescription = "remove success status"
 
 instance ToolParameter GlobResult where
-  paramName _ _ = "glob_result"
-  paramDescription _ = "list of matching file paths"
+  paramName = "glob_result"
+  paramDescription = "list of matching file paths"
 
 instance ToolParameter GrepResult where
-  paramName _ _ = "grep_result"
-  paramDescription _ = "search results"
+  paramName = "grep_result"
+  paramDescription = "search results"
 
 instance ToolParameter DiffResult where
-  paramName _ _ = "diff_result"
-  paramDescription _ = "unified diff output showing differences between files"
+  paramName = "diff_result"
+  paramDescription = "unified diff output showing differences between files"
 
 instance ToolParameter BashResult where
-  paramName _ _ = "bash_result"
-  paramDescription _ = "command output"
+  paramName = "bash_result"
+  paramDescription = "command output"
 
 instance ToolParameter (CmdResult command) where
-  paramName _ _ = "cmd_result"
-  paramDescription _ = "command execution result with exit code and filtered output"
+  paramName = "cmd_result"
+  paramDescription = "command execution result with exit code and filtered output"
 
 instance ToolParameter CabalBuildResult where
-  paramName _ _ = "cabal_build_result"
-  paramDescription _ = "cabal build result with success status and output"
+  paramName = "cabal_build_result"
+  paramDescription = "cabal build result with success status and output"
 
 instance ToolParameter TodoWriteResult where
-  paramName _ _ = "result"
-  paramDescription _ = "todo write result (always succeeds)"
+  paramName = "result"
+  paramDescription = "todo write result (always succeeds)"
 
 instance ToolParameter TodoReadResult where
-  paramName _ _ = "todos"
-  paramDescription _ = "list of all todos"
+  paramName = "todos"
+  paramDescription = "list of all todos"
 
 instance ToolParameter TodoCheckResult where
-  paramName _ _ = "result"
-  paramDescription _ = "message describing what happened (todo checked, no match found, or multiple matches)"
+  paramName = "result"
+  paramDescription = "message describing what happened (todo checked, no match found, or multiple matches)"
 
 instance ToolParameter TodoDeleteResult where
-  paramName _ _ = "result"
-  paramDescription _ = "message describing what happened (todo deleted, no match found, or multiple matches)"
+  paramName = "result"
+  paramDescription = "message describing what happened (todo deleted, no match found, or multiple matches)"
 
 instance ToolParameter SedPrintResult where
-  paramName _ _ = "sed_print_result"
-  paramDescription _ = "file lines matching the sed expression, with line numbers"
+  paramName = "sed_print_result"
+  paramDescription = "file lines matching the sed expression, with line numbers"
 
 -- ToolFunction instances for result types
 instance ToolFunction GetCwdResult where
-  toolFunctionName _ = "getcwd"
-  toolFunctionDescription _ = "Get the current working directory"
+  toolFunctionName = "getcwd"
+  toolFunctionDescription = "Get the current working directory"
 
 instance ToolFunction ReadFileResult where
-  toolFunctionName _ = "read_file"
-  toolFunctionDescription _ = "Read a file from the filesystem and return its contents"
+  toolFunctionName = "read_file"
+  toolFunctionDescription = "Read a file from the filesystem and return its contents"
 
 instance ToolFunction WriteFileResult where
-  toolFunctionName _ = "write_file"
-  toolFunctionDescription _ = "Write content to a new file or overwrite existing file"
+  toolFunctionName = "write_file"
+  toolFunctionDescription = "Write content to a new file or overwrite existing file"
 
 instance ToolFunction EditFileResult where
-  toolFunctionName _ = "edit_file"
-  toolFunctionDescription _ = "Edit an existing file by replacing old_string with new_string"
+  toolFunctionName = "edit_file"
+  toolFunctionDescription = "Edit an existing file by replacing old_string with new_string"
 
 instance ToolFunction MkdirResult where
-  toolFunctionName _ = "mkdir"
-  toolFunctionDescription _ = "Create a directory, optionally creating parent directories"
+  toolFunctionName = "mkdir"
+  toolFunctionDescription = "Create a directory, optionally creating parent directories"
 
 instance ToolFunction RemoveResult where
-  toolFunctionName _ = "remove"
-  toolFunctionDescription _ = "Remove a file or directory, optionally recursive"
+  toolFunctionName = "remove"
+  toolFunctionDescription = "Remove a file or directory, optionally recursive"
 
 instance ToolFunction GlobResult where
-  toolFunctionName _ = "glob"
-  toolFunctionDescription _ = "Find files matching a glob pattern"
+  toolFunctionName = "glob"
+  toolFunctionDescription = "Find files matching a glob pattern"
 
 instance ToolFunction GrepResult where
-  toolFunctionName _ = "grep"
-  toolFunctionDescription _ = "Search file contents using regex pattern"
+  toolFunctionName = "grep"
+  toolFunctionDescription = "Search file contents using regex pattern"
 
 instance ToolFunction DiffResult where
-  toolFunctionName _ = "diff"
-  toolFunctionDescription _ = "Show differences between two files using unified diff format"
+  toolFunctionName = "diff"
+  toolFunctionDescription = "Show differences between two files using unified diff format"
 
 instance ToolFunction BashResult where
-  toolFunctionName _ = "bash"
-  toolFunctionDescription _ = "Execute a bash command and return output"
+  toolFunctionName = "bash"
+  toolFunctionDescription = "Execute a bash command and return output"
 
 instance KnownSymbol command => ToolFunction (CmdResult command) where
-  toolFunctionName _ = "call_" <> T.pack (symbolVal (Proxy @command))
-  toolFunctionDescription _ = "Execute " <> T.pack (symbolVal (Proxy @command)) <> " command with optional output filtering. Filters (grep patterns, head/tail) are applied to stdout (and stderr if filter_stderr=true). Grep uses OR logic (match any pattern). Filters apply in order: grep → head → tail."
+  toolFunctionName = "call_" <> T.pack (symbolVal (Proxy @command))
+  toolFunctionDescription = "Execute " <> T.pack (symbolVal (Proxy @command)) <> " command with optional output filtering. Filters (grep patterns, head/tail) are applied to stdout (and stderr if filter_stderr=true). Grep uses OR logic (match any pattern). Filters apply in order: grep → head → tail."
 
 instance ToolFunction CabalBuildResult where
-  toolFunctionName _ = "cabal_build"
-  toolFunctionDescription _ = "Run cabal build in a specified directory and return build results"
+  toolFunctionName = "cabal_build"
+  toolFunctionDescription = "Run cabal build in a specified directory and return build results"
 
 instance ToolFunction TodoWriteResult where
-  toolFunctionName _ = "todo_write"
-  toolFunctionDescription _ = "Add a new todo item to the list"
+  toolFunctionName = "todo_write"
+  toolFunctionDescription = "Add a new todo item to the list"
 
 instance ToolFunction TodoReadResult where
-  toolFunctionName _ = "todo_read"
-  toolFunctionDescription _ = "Read all current todos with their completion status"
+  toolFunctionName = "todo_read"
+  toolFunctionDescription = "Read all current todos with their completion status"
 
 instance ToolFunction TodoCheckResult where
-  toolFunctionName _ = "todo_check"
-  toolFunctionDescription _ = "Mark a todo as completed by text prefix (must match exactly one todo)"
+  toolFunctionName = "todo_check"
+  toolFunctionDescription = "Mark a todo as completed by text prefix (must match exactly one todo)"
 
 instance ToolFunction TodoDeleteResult where
-  toolFunctionName _ = "todo_delete"
-  toolFunctionDescription _ = "Delete a todo by text prefix (must match exactly one todo)"
+  toolFunctionName = "todo_delete"
+  toolFunctionDescription = "Delete a todo by text prefix (must match exactly one todo)"
 
 instance ToolFunction SedPrintResult where
-  toolFunctionName _ = "sed_print"
-  toolFunctionDescription _ = "Print specific line ranges from a file using sed-style expressions. Supports: line numbers (5p), ranges (10,20p), relative ranges (5,+10p for 10 lines from line 5), pattern matching (/text/p for lines containing 'text'), and combinations (5,/end/p, /start/,/end/p, /start/,+5p). Empty pattern (//) matches all lines. Multiple expressions can be separated by semicolons (5p;10,20p)."
+  toolFunctionName = "sed_print"
+  toolFunctionDescription = "Print specific line ranges from a file using sed-style expressions. Supports: line numbers (5p), ranges (10,20p), relative ranges (5,+10p for 10 lines from line 5), pattern matching (/text/p for lines containing 'text'), and combinations (5,/end/p, /start/,/end/p, /start/,+5p). Empty pattern (//) matches all lines. Multiple expressions can be separated by semicolons (5p;10,20p)."
 
 --------------------------------------------------------------------------------
 -- Utilities

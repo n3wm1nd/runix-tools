@@ -292,20 +292,20 @@ instance Autodocodec.HasCodec EnableToolParams where
       <*> Autodocodec.requiredField "function_name" "Function name (e.g., 'echoTool')" Autodocodec..= enableFunctionName
 
 instance UniversalLLM.Tools.ToolParameter EnableToolParams where
-  paramName _ _ = "enable_tool_params"
-  paramDescription _ = "parameters to enable a tool"
+  paramName = "enable_tool_params"
+  paramDescription = "parameters to enable a tool"
 
 newtype EnableToolResult = EnableToolResult Text
   deriving stock (Show, Eq)
   deriving (Autodocodec.HasCodec) via Text
 
 instance UniversalLLM.Tools.ToolParameter EnableToolResult where
-  paramName _ _ = "result"
-  paramDescription _ = "result of enabling tool"
+  paramName = "result"
+  paramDescription = "result of enabling tool"
 
 instance UniversalLLM.Tools.ToolFunction EnableToolResult where
-  toolFunctionName _ = "enable_generated_tool"
-  toolFunctionDescription _ = "Enable a generated tool by uncommenting it in the registry"
+  toolFunctionName = "enable_generated_tool"
+  toolFunctionDescription = "Enable a generated tool by uncommenting it in the registry"
 
 -- | Disable a tool in the registry (comment it out)
 disableGeneratedTool
@@ -333,20 +333,20 @@ instance Autodocodec.HasCodec DisableToolParams where
       <*> Autodocodec.requiredField "function_name" "Function name (e.g., 'echoTool')" Autodocodec..= disableFunctionName
 
 instance UniversalLLM.Tools.ToolParameter DisableToolParams where
-  paramName _ _ = "disable_tool_params"
-  paramDescription _ = "parameters to disable a tool"
+  paramName = "disable_tool_params"
+  paramDescription = "parameters to disable a tool"
 
 newtype DisableToolResult = DisableToolResult Text
   deriving stock (Show, Eq)
   deriving (Autodocodec.HasCodec) via Text
 
 instance UniversalLLM.Tools.ToolParameter DisableToolResult where
-  paramName _ _ = "result"
-  paramDescription _ = "result of disabling tool"
+  paramName = "result"
+  paramDescription = "result of disabling tool"
 
 instance UniversalLLM.Tools.ToolFunction DisableToolResult where
-  toolFunctionName _ = "disable_generated_tool"
-  toolFunctionDescription _ = "Disable a generated tool by commenting it out in the registry"
+  toolFunctionName = "disable_generated_tool"
+  toolFunctionDescription = "Disable a generated tool by commenting it out in the registry"
 
 -- | List all generated tools in the registry
 listGeneratedTools
@@ -370,17 +370,17 @@ instance Autodocodec.HasCodec ListToolsParams where
   codec = Autodocodec.object "ListToolsParams" $ pure ListToolsParams
 
 instance UniversalLLM.Tools.ToolParameter ListToolsParams where
-  paramName _ _ = "list_tools_params"
-  paramDescription _ = "no parameters needed"
+  paramName = "list_tools_params"
+  paramDescription = "no parameters needed"
 
 newtype ListToolsResult = ListToolsResult Text
   deriving stock (Show, Eq)
   deriving (Autodocodec.HasCodec) via Text
 
 instance UniversalLLM.Tools.ToolParameter ListToolsResult where
-  paramName _ _ = "tools"
-  paramDescription _ = "list of generated tools with their status"
+  paramName = "tools"
+  paramDescription = "list of generated tools with their status"
 
 instance UniversalLLM.Tools.ToolFunction ListToolsResult where
-  toolFunctionName _ = "list_generated_tools"
-  toolFunctionDescription _ = "List all generated tools showing which are enabled/disabled"
+  toolFunctionName = "list_generated_tools"
+  toolFunctionDescription = "List all generated tools showing which are enabled/disabled"

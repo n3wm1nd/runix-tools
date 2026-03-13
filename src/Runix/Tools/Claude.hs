@@ -54,8 +54,8 @@ instance HasCodec UserPrompt where
   codec = Autodocodec.dimapCodec UserPrompt (\(UserPrompt t) -> t) codec
 
 instance ToolParameter UserPrompt where
-  paramName _ _ = "prompt"
-  paramDescription _ = "the user's request or question"
+  paramName = "prompt"
+  paramDescription = "the user's request or question"
 
 -- | CLAUDE.md instructions
 newtype ClaudeInstructions = ClaudeInstructions Text
@@ -73,8 +73,8 @@ instance HasCodec (SubagentResult model) where
     codec
 
 instance ToolParameter (SubagentResult model) where
-  paramName _ _ = "result"
-  paramDescription _ = "result from the subagent/skill"
+  paramName = "result"
+  paramDescription = "result from the subagent/skill"
 
 -- | Tools mode for Claude agents
 data ToolsMode

@@ -59,25 +59,25 @@ instance HasCodec BuildToolResult where
 --------------------------------------------------------------------------------
 
 instance ToolParameter ToolName where
-  paramName _ _ = "tool_name"
-  paramDescription _ = "name of the tool (e.g., searchFiles, analyzeCode)"
+  paramName = "tool_name"
+  paramDescription = "name of the tool (e.g., searchFiles, analyzeCode)"
 
 instance ToolParameter ToolDescription where
-  paramName _ _ = "description"
-  paramDescription _ = "what the tool does and when to use it"
+  paramName = "description"
+  paramDescription = "what the tool does and when to use it"
 
 instance ToolParameter ToolImplementation where
-  paramName _ _ = "implementation"
-  paramDescription _ = "complete Haskell code including type signature, function body, and all required instances"
+  paramName = "implementation"
+  paramDescription = "complete Haskell code including type signature, function body, and all required instances"
 
 instance ToolParameter BuildToolResult where
-  paramName _ _ = "build_result"
-  paramDescription _ = "result of tool build operation"
+  paramName = "build_result"
+  paramDescription = "result of tool build operation"
 
 --------------------------------------------------------------------------------
 -- ToolFunction Instance
 --------------------------------------------------------------------------------
 
 instance ToolFunction BuildToolResult where
-  toolFunctionName _ = "build_tool"
-  toolFunctionDescription _ = "Create a new tool using the tool-builder agent. Provides a specialized environment for generating Haskell tools with full compilation validation and automatic registration."
+  toolFunctionName = "build_tool"
+  toolFunctionDescription = "Create a new tool using the tool-builder agent. Provides a specialized environment for generating Haskell tools with full compilation validation and automatic registration."
